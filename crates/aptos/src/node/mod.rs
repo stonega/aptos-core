@@ -250,10 +250,12 @@ pub enum StakePoolType {
 
 #[derive(Debug, Serialize)]
 pub struct StakePoolResult {
-    pool_address: AccountAddress,
-    operator_address: AccountAddress,
-    voter_address: AccountAddress,
-    pool_type: StakePoolType,
+    pub pool_address: AccountAddress,
+    pub operator_address: AccountAddress,
+    pub voter_address: AccountAddress,
+    pub pool_type: StakePoolType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vesting_contract: Option<AccountAddress>,
 }
 
 #[derive(Parser)]
@@ -278,49 +280,57 @@ impl CliCommand<Vec<StakePoolResult>> for GetStakePool {
     async fn execute(mut self) -> CliTypedResult<Vec<StakePoolResult>> {
         let owner_address = self.owner_address;
         let client = self.rest_options.client(&self.profile_options)?;
-
-        let mut stake_pool_results: Vec<StakePoolResult> = vec![];
-        // Add direct stake pool if any.
-        let direct_stake_pool =
-            get_stake_pool_info(&client, owner_address, StakePoolType::Direct).await;
-        if let Ok(direct_stake_pool) = direct_stake_pool {
-            stake_pool_results.push(direct_stake_pool);
-        };
-
-        // Fetch all stake pools managed via staking contracts.
-        let staking_contract_pools =
-            get_staking_contract_pools(&client, owner_address, StakePoolType::StakingContract)
-                .await;
-        if let Ok(mut staking_contract_pools) = staking_contract_pools {
-            stake_pool_results.append(&mut staking_contract_pools);
-        };
-
-        // Fetch all stake pools managed via employee vesting accounts.
-        let vesting_admin_store = client
-            .get_account_resource_bcs::<VestingAdminStore>(
-                owner_address,
-                "0x1::vesting::AdminStore",
-            )
-            .await;
-        if let Ok(vesting_admin_store) = vesting_admin_store {
-            let vesting_contracts = vesting_admin_store.into_inner().vesting_contracts;
-            for vesting_contract in vesting_contracts {
-                let mut staking_contract_pools =
-                    get_staking_contract_pools(&client, vesting_contract, StakePoolType::Vesting)
-                        .await
-                        .unwrap();
-                stake_pool_results.append(&mut staking_contract_pools);
-            }
-        };
-
-        Ok(stake_pool_results)
+        get_stake_pools(&client, owner_address).await
     }
+}
+
+pub async fn get_stake_pools(
+    client: &Client,
+    owner_address: AccountAddress,
+) -> CliTypedResult<Vec<StakePoolResult>> {
+    let mut stake_pool_results: Vec<StakePoolResult> = vec![];
+    // Add direct stake pool if any.
+    let direct_stake_pool =
+        get_stake_pool_info(&client, owner_address, StakePoolType::Direct, None).await;
+    if let Ok(direct_stake_pool) = direct_stake_pool {
+        stake_pool_results.push(direct_stake_pool);
+    };
+
+    // Fetch all stake pools managed via staking contracts.
+    let staking_contract_pools =
+        get_staking_contract_pools(&client, owner_address, StakePoolType::StakingContract, None)
+            .await;
+    if let Ok(mut staking_contract_pools) = staking_contract_pools {
+        stake_pool_results.append(&mut staking_contract_pools);
+    };
+
+    // Fetch all stake pools managed via employee vesting accounts.
+    let vesting_admin_store = client
+        .get_account_resource_bcs::<VestingAdminStore>(owner_address, "0x1::vesting::AdminStore")
+        .await;
+    if let Ok(vesting_admin_store) = vesting_admin_store {
+        let vesting_contracts = vesting_admin_store.into_inner().vesting_contracts;
+        for vesting_contract in vesting_contracts {
+            let mut staking_contract_pools = get_staking_contract_pools(
+                &client,
+                vesting_contract,
+                StakePoolType::Vesting,
+                Some(vesting_contract),
+            )
+            .await
+            .unwrap();
+            stake_pool_results.append(&mut staking_contract_pools);
+        }
+    };
+
+    Ok(stake_pool_results)
 }
 
 pub async fn get_staking_contract_pools(
     client: &Client,
     staker_address: AccountAddress,
     pool_type: StakePoolType,
+    vesting_contract: Option<AccountAddress>,
 ) -> CliTypedResult<Vec<StakePoolResult>> {
     let mut stake_pool_results: Vec<StakePoolResult> = vec![];
     let staking_contract_store = client
@@ -331,10 +341,14 @@ pub async fn get_staking_contract_pools(
         .await?;
     let staking_contracts = staking_contract_store.into_inner().staking_contracts;
     for staking_contract in staking_contracts {
-        let stake_pool_address =
-            get_stake_pool_info(client, staking_contract.value.pool_address, pool_type)
-                .await
-                .unwrap();
+        let stake_pool_address = get_stake_pool_info(
+            client,
+            staking_contract.value.pool_address,
+            pool_type,
+            vesting_contract,
+        )
+        .await
+        .unwrap();
         stake_pool_results.push(stake_pool_address);
     }
     Ok(stake_pool_results)
@@ -344,6 +358,7 @@ pub async fn get_stake_pool_info(
     client: &Client,
     pool_address: AccountAddress,
     pool_type: StakePoolType,
+    vesting_contract: Option<AccountAddress>,
 ) -> CliTypedResult<StakePoolResult> {
     let stake_pool = client
         .get_account_resource_bcs::<StakePool>(pool_address, "0x1::stake::StakePool")
@@ -354,6 +369,7 @@ pub async fn get_stake_pool_info(
         operator_address: stake_pool.operator_address,
         voter_address: stake_pool.delegated_voter,
         pool_type,
+        vesting_contract,
     })
 }
 
