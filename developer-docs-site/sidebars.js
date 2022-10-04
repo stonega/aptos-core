@@ -94,7 +94,7 @@ const sidebars = {
       className: "sidebar-title",
     },
     "nodes/aptos-deployments",
-    "nodes/leaderboard-metrics",
+    "nodes/keys-and-identities",
     /** Delete during clean up
     {
       type: "category",
@@ -191,6 +191,7 @@ const sidebars = {
       collapsed: true,
       items: ["nodes/node-health-checker/node-health-checker-faq"],
     },
+    "nodes/leaderboard-metrics",
     "reference/telemetry",
 
     /** Delete this section while cleaning up 
