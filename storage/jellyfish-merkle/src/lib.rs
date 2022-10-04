@@ -79,7 +79,7 @@ pub mod restore;
 #[cfg(any(test, feature = "fuzzing"))]
 pub mod test_helper;
 
-use crate::metrics::APTOS_JELLYFISH_LEAF_COUNT;
+use crate::metrics::{APTOS_JELLYFISH_LEAF_COUNT, APTOS_JELLYFISH_LEAF_DELETION_COUNT};
 use anyhow::{bail, ensure, format_err, Result};
 use aptos_crypto::{
     hash::{CryptoHash, SPARSE_MERKLE_PLACEHOLDER_HASH},
@@ -567,9 +567,19 @@ where
                 let new_internal_node = InternalNode::new(new_children);
                 Ok(Some(new_internal_node.into()))
             }
-            Node::Leaf(leaf_node) => self.batch_update_subtree_with_existing_leaf(
-                node_key, version, leaf_node, kvs, depth, hash_cache, batch,
-            ),
+            Node::Leaf(leaf_node) => {
+                let deleted_leaf_account_key = leaf_node.account_key();
+                let new_node_opt = self.batch_update_subtree_with_existing_leaf(
+                    node_key, version, leaf_node, kvs, depth, hash_cache, batch,
+                )?;
+                match &new_node_opt {
+                    Some(Node::Leaf(new_leaf))
+                        if new_leaf.account_key() == deleted_leaf_account_key => {}
+                    _ => APTOS_JELLYFISH_LEAF_DELETION_COUNT.inc(),
+                }
+                Ok(new_node_opt)
+            }
+
             Node::Null => {
                 ensure!(depth == 0, "Null node can only exist at depth 0");
                 self.batch_update_subtree(node_key, version, kvs, 0, hash_cache, batch)
