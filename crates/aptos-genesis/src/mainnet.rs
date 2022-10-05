@@ -7,7 +7,10 @@ use aptos_config::config::{
     NO_OP_STORAGE_PRUNER_CONFIG,
 };
 use aptos_temppath::TempPath;
-use aptos_types::{chain_id::ChainId, transaction::Transaction, waypoint::Waypoint};
+use aptos_types::{
+    account_address::AccountAddress, chain_id::ChainId, transaction::Transaction,
+    waypoint::Waypoint,
+};
 use aptos_vm::AptosVM;
 use aptosdb::AptosDB;
 use framework::ReleaseBundle;
@@ -54,6 +57,10 @@ pub struct MainnetGenesisInfo {
     employee_vesting_start: u64,
     /// Duration of each vesting period (in seconds).
     employee_vesting_period_duration: u64,
+    /// Address to send ANS registry fees to
+    pub ans_funds_address: AccountAddress,
+    /// Address of account controlling ANS registry
+    pub ans_admin_address: AccountAddress,
 }
 
 impl MainnetGenesisInfo {
@@ -65,6 +72,12 @@ impl MainnetGenesisInfo {
         framework: ReleaseBundle,
         genesis_config: &GenesisConfiguration,
     ) -> anyhow::Result<MainnetGenesisInfo> {
+        let ans_funds_address = genesis_config
+            .ans_funds_address
+            .expect("Expected ANS funds address");
+        let ans_admin_address = genesis_config
+            .ans_admin_address
+            .expect("Expected ANS Admin Multisig AuthKey");
         let employee_vesting_start = genesis_config
             .employee_vesting_start
             .expect("Employee vesting start time (in secs) needs to be provided");
@@ -93,6 +106,8 @@ impl MainnetGenesisInfo {
             voting_power_increase_limit: genesis_config.voting_power_increase_limit,
             employee_vesting_start,
             employee_vesting_period_duration,
+            ans_funds_address,
+            ans_admin_address,
         })
     }
 
@@ -126,6 +141,8 @@ impl MainnetGenesisInfo {
                 voting_power_increase_limit: self.voting_power_increase_limit,
                 employee_vesting_start: self.employee_vesting_start,
                 employee_vesting_period_duration: self.employee_vesting_period_duration,
+                ans_funds_address: self.ans_funds_address,
+                ans_admin_address: self.ans_admin_address,
             },
         )
     }

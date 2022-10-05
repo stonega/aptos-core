@@ -246,6 +246,8 @@ pub fn fetch_mainnet_genesis_info(git_options: GitOptions) -> CliTypedResult<Mai
             voting_power_increase_limit: layout.voting_power_increase_limit,
             employee_vesting_start: layout.employee_vesting_start,
             employee_vesting_period_duration: layout.employee_vesting_period_duration,
+            ans_funds_address: layout.ans_funds_address,
+            ans_admin_address: layout.ans_admin_address,
         },
     )?)
 }
@@ -283,6 +285,8 @@ pub fn fetch_genesis_info(git_options: GitOptions) -> CliTypedResult<GenesisInfo
             voting_power_increase_limit: layout.voting_power_increase_limit,
             employee_vesting_start: layout.employee_vesting_start,
             employee_vesting_period_duration: layout.employee_vesting_period_duration,
+            ans_funds_address: layout.ans_funds_address,
+            ans_admin_address: layout.ans_admin_address,
         },
     )?)
 }
