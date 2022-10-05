@@ -53,16 +53,6 @@ pub static COMMITTED_BLOCKS_COUNT: Lazy<IntCounter> = Lazy::new(|| {
     .unwrap()
 });
 
-/// Count of the committed transactions since last restart.
-pub static COMMITTED_TXNS_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
-    register_int_counter_vec!(
-        "aptos_consensus_committed_txns_count",
-        "Count of the transactions since last restart. state is success or failed",
-        &["state"]
-    )
-    .unwrap()
-});
-
 //////////////////////
 // PROPOSAL ELECTION
 //////////////////////
@@ -488,3 +478,49 @@ pub static BUFFER_MANAGER_RETRY_COUNT: Lazy<IntCounter> = Lazy::new(|| {
     )
     .unwrap()
 });
+
+//////////////////////////////////////
+// EXECUTED TRANSACTION STATS COUNTERS
+//////////////////////////////////////
+
+/// Count of the executed transactions since last restart.
+pub static EXECUTED_TXNS_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_int_counter_vec!(
+        "aptos_consensus_executed_txns_count",
+        "Count of the transactions since last restart. state is success or failed",
+        &["state"]
+    )
+    .unwrap()
+});
+
+/// Counter of executed user transactions by payload type
+pub static EXECUTED_USER_TRANSACTIONS_PAYLOAD_TYPE: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_int_counter_vec!(
+        "aptos_executed_user_transactions_by_payload",
+        "Counter of executed user transactions by payload type",
+        &["payload_type"]
+    )
+    .unwrap()
+});
+
+/// Counter of executed EntryFunction user transactions by module
+pub static EXECUTED_USER_TRANSACTIONS_ENTRY_FUNCTION_MODULE: Lazy<IntCounterVec> =
+    Lazy::new(|| {
+        register_int_counter_vec!(
+            "aptos_executed_user_transactions_entry_function_by_module",
+            "Counter of executed EntryFunction user transactions by module",
+            &["account", "name"]
+        )
+        .unwrap()
+    });
+
+/// Counter of executed EntryFunction user transaction for core address by method
+pub static EXECUTED_USER_TRANSACTIONS_ENTRY_FUNCTION_CORE_METHOD: Lazy<IntCounterVec> =
+    Lazy::new(|| {
+        register_int_counter_vec!(
+            "aptos_executed_user_transactions_entry_function_by_core_method",
+            "Counter of executed EntryFunction user transaction for core address by method",
+            &["module", "method"]
+        )
+        .unwrap()
+    });

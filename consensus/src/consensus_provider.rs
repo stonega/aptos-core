@@ -64,6 +64,9 @@ pub fn start_consensus(
         state_sync_notifier,
         commit_notifier.clone(),
         runtime.handle(),
+        node_config
+            .consensus
+            .executed_transactions_detailed_counters,
     ));
 
     let time_service = Arc::new(ClockTimeService::new(runtime.handle().clone()));

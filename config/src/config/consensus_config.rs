@@ -32,6 +32,7 @@ pub struct ConsensusConfig {
     // the period = (poll_count - 1) * 30ms
     pub quorum_store_poll_count: u64,
     pub intra_consensus_channel_buffer_size: usize,
+    pub executed_transactions_detailed_counters: bool,
 }
 
 impl Default for ConsensusConfig {
@@ -59,6 +60,7 @@ impl Default for ConsensusConfig {
             quorum_store_pull_timeout_ms: 1000,
             quorum_store_poll_count: 10,
             intra_consensus_channel_buffer_size: 10,
+            executed_transactions_detailed_counters: true,
         }
     }
 }

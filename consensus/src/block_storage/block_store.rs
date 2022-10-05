@@ -19,7 +19,7 @@ use anyhow::{bail, ensure, format_err, Context};
 use aptos_crypto::{hash::ACCUMULATOR_PLACEHOLDER_HASH, HashValue};
 use aptos_infallible::RwLock;
 use aptos_logger::prelude::*;
-use aptos_types::{ledger_info::LedgerInfoWithSignatures, transaction::TransactionStatus};
+use aptos_types::ledger_info::LedgerInfoWithSignatures;
 use consensus_types::{
     block::Block, common::Round, executed_block::ExecutedBlock, quorum_cert::QuorumCert,
     sync_info::SyncInfo, timeout_2chain::TwoChainTimeoutCertificate,
@@ -46,34 +46,13 @@ fn update_counters_for_ordered_blocks(ordered_blocks: &[Arc<ExecutedBlock>]) {
     }
 }
 
-pub fn update_counters_for_committed_blocks(blocks_to_commit: &[Arc<ExecutedBlock>]) {
-    for block in blocks_to_commit {
+pub fn update_counters_for_committed_blocks(committed_blocks: &[Arc<ExecutedBlock>]) {
+    for block in committed_blocks {
         observe_block(block.block().timestamp_usecs(), BlockStage::COMMITTED);
-        let txn_status = block.compute_result().compute_status();
-        counters::NUM_TXNS_PER_BLOCK.observe(txn_status.len() as f64);
+        counters::NUM_TXNS_PER_BLOCK.observe(block.compute_result().compute_status().len() as f64);
         counters::COMMITTED_BLOCKS_COUNT.inc();
         counters::LAST_COMMITTED_ROUND.set(block.round() as i64);
         counters::LAST_COMMITTED_VERSION.set(block.compute_result().num_leaves() as i64);
-
-        for status in txn_status.iter() {
-            match status {
-                TransactionStatus::Keep(_) => {
-                    counters::COMMITTED_TXNS_COUNT
-                        .with_label_values(&["success"])
-                        .inc();
-                }
-                TransactionStatus::Discard(_) => {
-                    counters::COMMITTED_TXNS_COUNT
-                        .with_label_values(&["failed"])
-                        .inc();
-                }
-                TransactionStatus::Retry => {
-                    counters::COMMITTED_TXNS_COUNT
-                        .with_label_values(&["retry"])
-                        .inc();
-                }
-            }
-        }
     }
 }
 

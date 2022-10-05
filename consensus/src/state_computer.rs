@@ -14,11 +14,14 @@ use anyhow::Result;
 use aptos_crypto::HashValue;
 use aptos_infallible::Mutex;
 use aptos_logger::prelude::*;
+use aptos_types::account_config::CORE_CODE_ADDRESS;
+use aptos_types::transaction::TransactionStatus;
 use aptos_types::{
     account_address::AccountAddress, contract_event::ContractEvent, epoch_state::EpochState,
     ledger_info::LedgerInfoWithSignatures, transaction::Transaction,
 };
 use consensus_notifications::ConsensusNotificationSender;
+use consensus_types::common::Payload;
 use consensus_types::{block::Block, common::Round, executed_block::ExecutedBlock};
 use executor_types::{BlockExecutorTrait, Error as ExecutionError, StateComputeResult};
 use fail::fail_point;
@@ -44,6 +47,7 @@ pub struct ExecutionProxy {
     async_commit_notifier: channel::Sender<CommitType>,
     validators: Mutex<Vec<AccountAddress>>,
     write_mutex: AsyncMutex<()>,
+    executed_transactions_detailed_counters: bool,
 }
 
 impl ExecutionProxy {
@@ -53,6 +57,7 @@ impl ExecutionProxy {
         state_sync_notifier: Arc<dyn ConsensusNotificationSender>,
         commit_notifier: Arc<dyn CommitNotifier>,
         handle: &tokio::runtime::Handle,
+        executed_transactions_detailed_counters: bool,
     ) -> Self {
         let (tx, mut rx) =
             channel::new::<NotificationType>(10, &counters::PENDING_STATE_SYNC_NOTIFICATION);
@@ -89,6 +94,7 @@ impl ExecutionProxy {
             async_commit_notifier: commit_tx,
             validators: Mutex::new(vec![]),
             write_mutex: AsyncMutex::new(()),
+            executed_transactions_detailed_counters,
         }
     }
 }
@@ -125,7 +131,12 @@ impl StateComputer for ExecutionProxy {
             .await
         )
         .expect("spawn_blocking failed")?;
-        observe_block(block.timestamp_usecs(), BlockStage::EXECUTED);
+
+        update_counters_for_executed_block(
+            block,
+            &compute_result,
+            self.executed_transactions_detailed_counters,
+        );
 
         // notify mempool about failed transaction
         if let Err(e) = self
@@ -241,5 +252,80 @@ impl StateComputer for ExecutionProxy {
             .verifier
             .get_ordered_account_addresses_iter()
             .collect();
+    }
+}
+
+pub fn update_counters_for_executed_block(
+    block: &Block,
+    compute_result: &StateComputeResult,
+    detailed_counters: bool,
+) {
+    observe_block(block.timestamp_usecs(), BlockStage::EXECUTED);
+    let txn_status = compute_result.compute_status();
+
+    for status in txn_status.iter() {
+        match status {
+            TransactionStatus::Keep(_) => {
+                counters::EXECUTED_TXNS_COUNT
+                    .with_label_values(&["success"])
+                    .inc();
+            }
+            TransactionStatus::Discard(_) => {
+                counters::EXECUTED_TXNS_COUNT
+                    .with_label_values(&["failed"])
+                    .inc();
+            }
+            TransactionStatus::Retry => {
+                counters::EXECUTED_TXNS_COUNT
+                    .with_label_values(&["retry"])
+                    .inc();
+            }
+        }
+    }
+
+    if let Some(payload) = block.payload() {
+        match payload {
+            Payload::DirectMempool(txns) => {
+                for txn in txns {
+                    match txn.payload() {
+                        aptos_types::transaction::TransactionPayload::Script(_script) => {
+                            counters::EXECUTED_USER_TRANSACTIONS_PAYLOAD_TYPE
+                                .with_label_values(&["script"])
+                                .inc();
+                        }
+                        aptos_types::transaction::TransactionPayload::ModuleBundle(_module) => {
+                            counters::EXECUTED_USER_TRANSACTIONS_PAYLOAD_TYPE
+                                .with_label_values(&["module"])
+                                .inc();
+                        }
+                        aptos_types::transaction::TransactionPayload::EntryFunction(function) => {
+                            counters::EXECUTED_USER_TRANSACTIONS_PAYLOAD_TYPE
+                                .with_label_values(&["function"])
+                                .inc();
+
+                            let is_core = function.module().address() == &CORE_CODE_ADDRESS;
+                            counters::EXECUTED_USER_TRANSACTIONS_ENTRY_FUNCTION_MODULE
+                                .with_label_values(&[
+                                    if is_core { "core" } else { "user" },
+                                    if is_core || detailed_counters {
+                                        function.module().name().as_str()
+                                    } else {
+                                        "user_module"
+                                    },
+                                ])
+                                .inc();
+                            if is_core && detailed_counters {
+                                counters::EXECUTED_USER_TRANSACTIONS_ENTRY_FUNCTION_CORE_METHOD
+                                    .with_label_values(&[
+                                        function.module().name().as_str(),
+                                        function.function().as_str(),
+                                    ])
+                                    .inc();
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
