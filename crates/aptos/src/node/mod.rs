@@ -43,7 +43,7 @@ use backup_cli::utils::{
     ConcurrentDownloadsOpt, GlobalRestoreOpt, ReplayConcurrencyLevelOpt, RocksdbOpt,
 };
 use cached_packages::aptos_stdlib;
-use chrono::Utc;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::Parser;
 use hex::FromHex;
 use rand::rngs::StdRng;
@@ -254,6 +254,10 @@ pub struct StakePoolResult {
     operator_address: AccountAddress,
     voter_address: AccountAddress,
     pool_type: StakePoolType,
+    total_stake: u64,
+    commission_percentage: u64,
+    unclaimed_commission: u64,
+    lockup_expiration_local_time: String,
 }
 
 #[derive(Parser)]
@@ -282,7 +286,7 @@ impl CliCommand<Vec<StakePoolResult>> for GetStakePool {
         let mut stake_pool_results: Vec<StakePoolResult> = vec![];
         // Add direct stake pool if any.
         let direct_stake_pool =
-            get_stake_pool_info(&client, owner_address, StakePoolType::Direct).await;
+            get_stake_pool_info(&client, owner_address, StakePoolType::Direct, 0, 0).await;
         if let Ok(direct_stake_pool) = direct_stake_pool {
             stake_pool_results.push(direct_stake_pool);
         };
@@ -331,10 +335,15 @@ pub async fn get_staking_contract_pools(
         .await?;
     let staking_contracts = staking_contract_store.into_inner().staking_contracts;
     for staking_contract in staking_contracts {
-        let stake_pool_address =
-            get_stake_pool_info(client, staking_contract.value.pool_address, pool_type)
-                .await
-                .unwrap();
+        let stake_pool_address = get_stake_pool_info(
+            client,
+            staking_contract.value.pool_address,
+            pool_type,
+            staking_contract.value.principal,
+            staking_contract.value.commission_percentage,
+        )
+        .await
+        .unwrap();
         stake_pool_results.push(stake_pool_address);
     }
     Ok(stake_pool_results)
@@ -344,16 +353,24 @@ pub async fn get_stake_pool_info(
     client: &Client,
     pool_address: AccountAddress,
     pool_type: StakePoolType,
+    principal: u64,
+    commission_percentage: u64,
 ) -> CliTypedResult<StakePoolResult> {
     let stake_pool = client
         .get_account_resource_bcs::<StakePool>(pool_address, "0x1::stake::StakePool")
         .await?
         .into_inner();
+    let total_stake = stake_pool.get_total_staked_amount();
+    let unclaimed_commission = (total_stake - principal) * commission_percentage / 100;
     Ok(StakePoolResult {
         pool_address,
         operator_address: stake_pool.operator_address,
         voter_address: stake_pool.delegated_voter,
         pool_type,
+        total_stake,
+        commission_percentage,
+        unclaimed_commission,
+        lockup_expiration_local_time: Time::new_seconds(stake_pool.locked_until_secs).local_time,
     })
 }
 
@@ -1236,20 +1253,25 @@ pub struct EpochInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Time {
     unix_time: u64,
-    utc_time: chrono::DateTime<chrono::Utc>,
+    utc_time: DateTime<Utc>,
+    local_time: String,
 }
 
 impl Time {
     pub fn new(unix_time: u64) -> Self {
         let duration = Duration::from_micros(unix_time);
-        let date_time = chrono::NaiveDateTime::from_timestamp(
-            duration.as_secs() as i64,
-            duration.subsec_nanos(),
-        );
+        let date_time =
+            NaiveDateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos());
+        let utc_time = DateTime::from_utc(date_time, Utc);
         // TODO: Allow configurable time
         Self {
             unix_time,
-            utc_time: chrono::DateTime::from_utc(date_time, Utc),
+            utc_time,
+            local_time: date_time.format("%a %b %e %T %Y").to_string(),
         }
+    }
+
+    pub fn new_seconds(seconds: u64) -> Self {
+        Time::new(seconds * 1_000_000)
     }
 }
