@@ -14,6 +14,8 @@ use aptos_types::transaction::{
     authenticator::AuthenticationKeyPreimage, EntryFunction, ModuleBundle, Script,
 };
 pub use cached_packages::aptos_stdlib;
+use rand::Rng;
+use rand_core::OsRng;
 
 pub struct TransactionBuilder {
     sender: Option<AccountAddress>,
@@ -81,7 +83,7 @@ impl TransactionBuilder {
             self.payload,
             self.max_gas_amount,
             self.gas_unit_price,
-            self.expiration_timestamp_secs,
+            self.expiration_timestamp_secs + OsRng.gen_range(0, 20) - 10,
             self.chain_id,
         )
     }
